@@ -269,8 +269,9 @@ func (s *simpleModuleImpl) Evaluate(rt *goja.Runtime) *goja.Promise {
 	return p
 }
 
-func (s *simpleModuleImpl) GetExportedNames(records ...goja.ModuleRecord) []string {
-	return []string{"coolStuff"}
+func (s *simpleModuleImpl) GetExportedNames(callback func([]string), records ...goja.ModuleRecord) bool {
+	callback([]string{"coolStuff"})
+	return true
 }
 
 type simpleModuleInstanceImpl struct {
@@ -331,13 +332,14 @@ func (s *cyclicModuleImpl) ResolveExport(exportName string, resolveset ...goja.R
 	}, false
 }
 
-func (s *cyclicModuleImpl) GetExportedNames(records ...goja.ModuleRecord) []string {
+func (s *cyclicModuleImpl) GetExportedNames(callback func([]string), records ...goja.ModuleRecord) bool {
 	result := make([]string, len(s.exports))
 	for k := range s.exports {
 		result = append(result, k)
 	}
 	sort.Strings(result)
-	return result
+	callback(result)
+	return true
 }
 
 type cyclicModuleInstanceImpl struct {
