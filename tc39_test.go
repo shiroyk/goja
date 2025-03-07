@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"path"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"gopkg.in/yaml.v2"
 )
 
@@ -166,26 +168,14 @@ var (
 		"test/language/literals/string/S7.8.4_A4.3_T2.js":             true,
 		"test/language/literals/string/S7.8.4_A4.3_T1.js":             true,
 
-		// integer separators
-		"test/language/expressions/object/cpn-obj-lit-computed-property-name-from-integer-separators.js":                  true,
-		"test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-integer-separators.js":      true,
-		"test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-integer-separators.js":          true,
-		"test/language/statements/class/cpn-class-decl-computed-property-name-from-integer-separators.js":                 true,
-		"test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-integer-separators.js":       true,
-		"test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-integer-separators.js":  true,
-		"test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-integer-separators.js":         true,
-		"test/language/expressions/class/cpn-class-expr-computed-property-name-from-integer-separators.js":                true,
-		"test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-integer-separators.js": true,
-
-		// BigInt
-		"test/built-ins/Object/seal/seal-biguint64array.js": true,
-		"test/built-ins/Object/seal/seal-bigint64array.js":  true,
-
 		// Regexp
 		"test/language/literals/regexp/invalid-range-negative-lookbehind.js":    true,
 		"test/language/literals/regexp/invalid-range-lookbehind.js":             true,
 		"test/language/literals/regexp/invalid-optional-negative-lookbehind.js": true,
 		"test/language/literals/regexp/invalid-optional-lookbehind.js":          true,
+
+		// unicode full case folding
+		"test/built-ins/RegExp/unicode_full_case_folding.js": true,
 
 		// FIXME bugs
 
@@ -212,43 +202,20 @@ var (
 		// Skip due to regexp named groups
 		"test/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call.js": true,
 
-		// uncathegorized yet
-		"test/built-ins/TypedArrayConstructors/ctors/no-species.js":                                            true,
-		"test/built-ins/TypedArray/prototype/set/array-arg-targetbuffer-detached-on-get-src-value-no-throw.js": true,
-		"test/built-ins/TypedArray/prototype/sort/sort-tonumber.js":                                            true,
-		"test/built-ins/RegExp/prototype/ignoreCase/this-val-non-obj.js":                                       true,
-		"test/built-ins/RegExp/prototype/Symbol.replace/flags-tostring-error.js":                               true,
-		"test/built-ins/RegExp/prototype/global/this-val-non-obj.js":                                           true,
-		"test/built-ins/RegExp/prototype/flags/this-val-non-obj.js":                                            true,
-		"test/built-ins/RegExp/prototype/unicode/this-val-non-obj.js":                                          true,
-		"test/built-ins/RegExp/prototype/Symbol.match/get-unicode-error.js":                                    true,
-		"test/built-ins/RegExp/prototype/Symbol.match/get-flags-err.js":                                        true,
-		"test/built-ins/RegExp/prototype/Symbol.match/flags-tostring-error.js":                                 true,
-		"test/built-ins/RegExp/prototype/Symbol.replace/get-flags-err.js":                                      true,
-		"test/built-ins/RegExp/prototype/sticky/this-val-non-obj.js":                                           true,
-		"test/built-ins/RegExp/prototype/source/this-val-non-obj.js":                                           true,
-		"test/built-ins/RegExp/prototype/multiline/this-val-non-obj.js":                                        true,
-		"test/built-ins/RegExp/unicode_full_case_folding.js":                                                   true,
-		"test/built-ins/RegExp/prototype/Symbol.replace/get-unicode-error.js":                                  true,
-		"test/built-ins/RegExp/lookahead-quantifier-match-groups.js":                                           true,
-		"test/built-ins/Number/S15.7.1.1_A1.js":                                                                true,
-		"test/built-ins/Date/year-zero.js":                                                                     true,
-		"test/built-ins/DataView/prototype/setBigUint64/not-a-constructor.js":                                  true,
-		"test/built-ins/Date/parse/year-zero.js":                                                               true,
-		"test/built-ins/DataView/prototype/getBigUint64/not-a-constructor.js":                                  true,
-		"test/language/expressions/unary-plus/S11.4.6_A3_T3.js":                                                true,
+		"test/built-ins/RegExp/nullable-quantifier.js":               true,
+		"test/built-ins/RegExp/lookahead-quantifier-match-groups.js": true,
 	}
 
 	featuresBlackList = []string{
 		"async-iteration",
 		"Symbol.asyncIterator",
-		"BigInt",
 		"resizable-arraybuffer",
 		"regexp-named-groups",
 		"regexp-duplicate-named-groups",
-		"regexp-dotall",
 		"regexp-unicode-property-escapes",
 		"regexp-match-indices",
+		"regexp-modifiers",
+		"RegExp.escape",
 		"legacy-regexp",
 		"tail-call-optimization",
 		"Temporal",
@@ -256,47 +223,63 @@ var (
 		"logical-assignment-operators",
 		"Atomics",
 		"Atomics.waitAsync",
+		"Atomics.pause",
 		"FinalizationRegistry",
 		"WeakRef",
-		"numeric-separator-literal",
 		"__getter__",
 		"__setter__",
 		"ShadowRealm",
 		"SharedArrayBuffer",
-		"error-cause",
 		"decorators",
 
+		"regexp-duplicate-named-groups",
 		"regexp-v-flag",
+		"iterator-helpers",
+		"symbols-as-weakmap-keys",
+		"uint8array-base64",
+		"String.prototype.toWellFormed",
+		"explicit-resource-management",
+		"set-methods",
 		"promise-try",
 		"promise-with-resolvers",
-		"import-attributes",
-		"iterator-helpers",
-		"Symbol.iterator",
-		"Float16Array",
-		"Array.fromAsync",
 		"array-grouping",
-		"String.prototype.toWellFormed",
-		"String.prototype.isWellFormed",
-		"change-array-by-copy",
+		"Math.sumPrecise",
+		"Float16Array",
 		"arraybuffer-transfer",
-		"symbols-as-weakmap-keys",
-		"set-methods",
-		"regexp-modifiers",
+		"Array.fromAsync",
+		"String.prototype.isWellFormed",
+
+		"source-phase-imports",
+		"import-attributes",
 	}
 )
 
+var goVersion *semver.Version
+
 func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		goVersion = semver.MustParse(strings.TrimPrefix(info.GoVersion, "go"))
+	} else {
+		panic("Could not read build info")
+	}
+
 	skip := func(prefixes ...string) {
 		for _, prefix := range prefixes {
 			skipPrefixes.Add(prefix)
 		}
 	}
 
-	skip(
-		// Go 1.16 only supports unicode 13
-		"test/language/identifiers/start-unicode-14.",
-		"test/language/identifiers/part-unicode-14.",
+	if goVersion.LessThan(semver.MustParse("1.21")) {
+		skip(
+			// Go <1.21 only supports Unicode 13
+			"test/language/identifiers/start-unicode-14.",
+			"test/language/identifiers/part-unicode-14.",
+			"test/language/identifiers/start-unicode-15.",
+			"test/language/identifiers/part-unicode-15.",
+		)
+	}
 
+	skip(
 		// generators and async generators (harness/hidden-constructors.js)
 		"test/built-ins/Async",
 
@@ -327,10 +310,6 @@ func init() {
 
 		"test/language/eval-code/direct/async-gen-",
 		"test/language/module-code/export-default-asyncgenerator-declaration-binding.js",
-
-		// BigInt
-		"test/built-ins/TypedArrayConstructors/BigUint64Array/",
-		"test/built-ins/TypedArrayConstructors/BigInt64Array/",
 
 		// restricted unicode regexp syntax
 		"test/language/literals/regexp/u-",

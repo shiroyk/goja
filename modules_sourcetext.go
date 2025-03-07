@@ -22,7 +22,7 @@ type SourceTextModuleInstance struct {
 	asyncPromise  *Promise
 }
 
-func (s *SourceTextModuleInstance) ExecuteModule(rt *Runtime, res, rej func(interface{})) (CyclicModuleInstance, error) {
+func (s *SourceTextModuleInstance) ExecuteModule(rt *Runtime, res, rej func(interface{}) error) (CyclicModuleInstance, error) {
 	promiseP := s.pcap.promise.self.(*Promise)
 	if len(promiseP.fulfillReactions) == 1 {
 		ar := promiseP.fulfillReactions[0].asyncRunner

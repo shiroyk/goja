@@ -14,8 +14,17 @@ function $ERROR(message) {
 	throw new Error(message);
 }
 
-function Test262Error() {
+function Test262Error(message) {
+  this.message = message || "";
 }
+
+Test262Error.prototype.toString = function () {
+  return "Test262Error: " + this.message;
+};
+
+Test262Error.thrower = (message) => {
+  throw new Test262Error(message);
+};
 
 function assert(mustBeTrue, message) {
     if (mustBeTrue === true) {
@@ -3135,18 +3144,6 @@ func TestDeleteGlobalEval(t *testing.T) {
 	testScript(SCRIPT, valueTrue, t)
 }
 
-func TestGlobalVarNames(t *testing.T) {
-	vm := New()
-	_, err := vm.RunString("(0,eval)('var x')")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = vm.RunString("let x")
-	if err == nil {
-		t.Fatal("Expected error")
-	}
-}
-
 func TestTryResultEmpty(t *testing.T) {
 	const SCRIPT = `
 	1; try { } finally { }
@@ -5867,6 +5864,26 @@ func TestFunctionBodyClassDecl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestNestedDestructArray(t *testing.T) {
+	const SCRIPT = `
+	var [
+		[ h = 0 ] = [ 0 ]
+	] = [];
+	assert.sameValue(h, 0);
+
+	var [
+		[ h1 = 1 ] = []
+	] = [];
+	assert.sameValue(h1, 1);
+
+	var [
+		[ h2 = 1 ] = []
+	] = [ [ 2 ] ];
+	assert.sameValue(h2, 2);
+	`
+	testScriptWithTestLib(SCRIPT, _undefined, t)
 }
 
 /*

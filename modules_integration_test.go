@@ -351,7 +351,7 @@ func (si *cyclicModuleInstanceImpl) HasTLA() bool {
 	return false
 }
 
-func (si *cyclicModuleInstanceImpl) ExecuteModule(rt *goja.Runtime, res, rej func(interface{})) (goja.CyclicModuleInstance, error) {
+func (si *cyclicModuleInstanceImpl) ExecuteModule(rt *goja.Runtime, res, rej func(interface{}) error) (goja.CyclicModuleInstance, error) {
 	si.rt = rt
 	return si, nil
 }

@@ -941,8 +941,8 @@ func ExampleRuntime_ExportTo_funcThrow() {
 
 func ExampleRuntime_ExportTo_funcVariadic() {
 	const SCRIPT = `
-	function f() {
-		return Array.prototype.join.call(arguments, ",");
+	function f(...args) {
+		return args.join("#");
 	}
 	`
 	vm := New()
@@ -957,7 +957,57 @@ func ExampleRuntime_ExportTo_funcVariadic() {
 		panic(err)
 	}
 	fmt.Println(fn("a", "b", 42))
-	// Output: a,b,42
+	// Output: a#b#42
+}
+
+func TestRuntime_ExportTo_funcVariadic(t *testing.T) {
+	const SCRIPT = `
+	function f(...args) {
+		return args.join("#");
+	}
+	`
+	vm := New()
+	_, err := vm.RunString(SCRIPT)
+	if err != nil {
+		panic(err)
+	}
+
+	t.Run("no args", func(t *testing.T) {
+		var fn func(args ...any) string
+		err = vm.ExportTo(vm.Get("f"), &fn)
+		if err != nil {
+			panic(err)
+		}
+		res := fn()
+		if res != "" {
+			t.Fatal(res)
+		}
+	})
+
+	t.Run("non-variadic args", func(t *testing.T) {
+		var fn func(firstArg any, args ...any) string
+		err = vm.ExportTo(vm.Get("f"), &fn)
+		if err != nil {
+			panic(err)
+		}
+		res := fn("first")
+		if res != "first" {
+			t.Fatal(res)
+		}
+	})
+
+	t.Run("non-variadic and variadic args", func(t *testing.T) {
+		var fn func(firstArg any, args ...any) string
+		err = vm.ExportTo(vm.Get("f"), &fn)
+		if err != nil {
+			panic(err)
+		}
+		res := fn("first", "second")
+		if res != "first#second" {
+			t.Fatal(res)
+		}
+	})
+
 }
 
 func TestRuntime_ExportToFuncFail(t *testing.T) {
@@ -1034,6 +1084,72 @@ func TestRuntime_ExportToObject(t *testing.T) {
 
 	if v := o.Get("test"); !v.StrictEquals(vm.ToValue(42)) {
 		t.Fatalf("Unexpected value: %v", v)
+	}
+}
+
+func TestRuntime_SetGlobalObject(t *testing.T) {
+	vm := New()
+
+	_, err := vm.RunString(`var myVar = 123;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldGlobalObject := vm.GlobalObject()
+
+	newGlobalObject, err := vm.RunString(`({oldGlobalReference:globalThis});`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm.SetGlobalObject(newGlobalObject.(*Object))
+
+	if vm.GlobalObject() != newGlobalObject {
+		t.Fatal("Expected global object to be new object")
+	}
+
+	if vm.GlobalObject().Get("myVar") != nil {
+		t.Fatal("Expected myVar to be undefined")
+	}
+
+	oldGlobalReference := vm.GlobalObject().Get("oldGlobalReference")
+	if oldGlobalReference == nil {
+		t.Fatal("Expected oldGlobalReference to be defined")
+	}
+
+	if oldGlobalReference != oldGlobalObject {
+		t.Fatal("Expected reference to be to old global object")
+	}
+}
+
+func TestRuntime_SetGlobalObject_Proxy(t *testing.T) {
+	vm := New()
+
+	globalObject := vm.GlobalObject()
+
+	globalObjectProxy := vm.NewProxy(globalObject, &ProxyTrapConfig{
+		Get: func(target *Object, property string, receiver Value) (value Value) {
+			if target != globalObject {
+				t.Fatal("Expected target to be global object")
+			}
+
+			if property != "testing" {
+				t.Fatal("Expected property to be 'testing'")
+			}
+
+			return valueTrue
+		},
+	})
+
+	vm.SetGlobalObject(vm.ToValue(globalObjectProxy).(*Object))
+
+	ret, err := vm.RunString("testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ret != valueTrue {
+		t.Fatal("Expected return value to equal true")
 	}
 }
 
@@ -1737,6 +1853,43 @@ func TestInterruptInWrappedFunctionExpectStackOverflowError(t *testing.T) {
 		t.Fatal("expected error but got no error")
 	}
 	var soErr *StackOverflowError
+	if !errors.As(err, &soErr) {
+		t.Fatalf("Wrong error type: %T", err)
+	}
+}
+
+func TestInterruptWithPromises(t *testing.T) {
+	rt := New()
+	rt.SetMaxCallStackSize(5)
+	// this test panics as otherwise goja will recover and possibly loop
+	rt.Set("abort", rt.ToValue(func() {
+		// panic("waty")
+		rt.Interrupt("abort this")
+	}))
+	var queue = make(chan func() error, 10)
+	rt.Set("myPromise", func() Value {
+		p, resolve, _ := rt.NewPromise()
+		queue <- func() error {
+			return resolve("some value")
+		}
+
+		return rt.ToValue(p)
+	})
+
+	_, err := rt.RunString(`
+		let p = myPromise()
+		p.then(() => { abort() });
+	`)
+	if err != nil {
+		t.Fatal("expected noerror but got error")
+	}
+	f := <-queue
+	err = f()
+	if err == nil {
+		t.Fatal("expected error but got no error")
+	}
+	t.Log(err)
+	var soErr *InterruptedError
 	if !errors.As(err, &soErr) {
 		t.Fatalf("Wrong error type: %T", err)
 	}
@@ -2916,6 +3069,42 @@ func ExampleRuntime_ForOf() {
 	}
 	fmt.Println(sb.String())
 	// Output: a=1,b=2,
+}
+
+func TestDestructAssignToSymbol(t *testing.T) {
+	const SCRIPT = `
+	const s = Symbol('s');
+	const target = {};
+
+	({a: target[s]} = {a: 42});
+	assert.sameValue(target[s], 42);
+`
+	testScriptWithTestLib(SCRIPT, _undefined, t)
+}
+
+func TestToNumber(t *testing.T) {
+	const SCRIPT = `
+	assert(isNaN(Number("+")));
+	assert(isNaN(Number("++")));
+	assert(isNaN(Number("-")));
+	assert(isNaN(Number("0xfp1")));
+	assert(isNaN(Number("0Xfp1")));
+	assert(isNaN(Number("+0xfp1")));
+	assert(isNaN(Number(" +0xfp1")));
+	assert(isNaN(Number(" + 0xfp1")));
+	assert(isNaN(Number(" 0xfp1")));
+	assert(isNaN(Number("-0xfp1")));
+	assert(isNaN(Number("- 0xfp1")));
+	assert(isNaN(Number(" - 0xfp1")));
+	assert.sameValue(Number("0."), 0);
+	assert.sameValue(Number(" "), 0);
+	assert.sameValue(Number(" Infinity"), Infinity);
+
+	let a = [1];
+	assert.sameValue(1, a.at("0xfp1"));
+	assert.sameValue(1, a.at(" 0xfp1"));
+	`
+	testScriptWithTestLib(SCRIPT, _undefined, t)
 }
 
 /*
